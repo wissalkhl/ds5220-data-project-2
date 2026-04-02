@@ -98,12 +98,46 @@ kubectl delete -f simple-job.yaml
 
 The sample application in the `iss-reboost/` directory tracks the location, speed, and altitude of the **International Space Station** every 15 minutes. Due to normal atmospheric drag (even at 400 km up) there's enough residual atmosphere to gradually slow the station and lower its orbit. Left unchecked, the ISS would reenter within a few years. To mitigate this, the ISS performs "reboost burns" periodically to restore a higher altitude.
 
+```mermaid
+flowchart LR
+    ISS_API["🛰️ wheretheiss.at\nPublic API"]
+    GHCR["📦 GHCR\nContainer Registry"]
+
+    subgraph AWS["☁️  AWS"]
+        IAM["🔑 IAM Role\nattached to EC2"]
+
+        subgraph EC2["EC2 Instance"]
+            subgraph K3S["K3S Kubernetes"]
+                CRON["⏱️ CronJob\nevery 15 minutes"]
+                POD["🐳 Pod\napp.py"]
+            end
+        end
+
+        DDB[("🗄️ DynamoDB\niss-tracking")]
+        S3["🪣 S3 Website\niss-altitude.png"]
+    end
+
+    BROWSER["🌐 Public Browser"]
+
+    GHCR -->|"pull image"| CRON
+    CRON -->|"spawns"| POD
+    ISS_API -->|"position + altitude"| POD
+    POD -->|"query last entry"| DDB
+    POD -->|"write new record"| DDB
+    POD -->|"read full history"| DDB
+    POD -->|"upload plot"| S3
+    IAM -. "authorizes" .-> DDB
+    IAM -. "authorizes" .-> S3
+    S3 -->|"serve plot"| BROWSER
+```
+
 On each run this application performs the following tasks:
 
 1. Calls the [wheretheiss.at](https://api.wheretheiss.at/v1/satellites/25544) API to get the ISS's current latitude, longitude, altitude, and velocity — no API key required.
 2. Queries DynamoDB for the most recent previous entry and computes the altitude delta.
 3. Labels the trend: `ASCENDING`, `DESCENDING`, `STABLE`, or `ORBITAL_BURN` (altitude gain ≥ 1 km, indicating a reboost maneuver).
 4. Writes the full record to DynamoDB.
+5. Reads the full history from DynamoDB, renders an altitude-over-time plot, and uploads it to S3.
 
 ### Create the DynamoDB Table
 
