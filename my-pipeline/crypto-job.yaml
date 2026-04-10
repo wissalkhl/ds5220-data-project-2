@@ -1,0 +1,26 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: crypto-tracker
+  namespace: default
+spec:
+  schedule: "0 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 10
+  failedJobsHistoryLimit: 10
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: crypto-tracker
+              image: ghcr.io/wissalkhl/crypto-tracker:latest
+              imagePullPolicy: Always
+              env:
+                - name: DYNAMODB_TABLE
+                  value: "crypto-tracking"
+                - name: S3_BUCKET
+                  value: "ds5220-project2"
+                - name: AWS_REGION
+                  value: "us-east-1"
